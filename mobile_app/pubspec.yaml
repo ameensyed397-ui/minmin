@@ -1,0 +1,16 @@
+name: minmin
+description: MIN MIN - Offline-first mobile AI coding assistant powered by local models.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.2
+  http: ^1.2.2
+
+flutter:
+  uses-material-design: true

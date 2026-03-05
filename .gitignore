@@ -1,0 +1,10 @@
+.venv/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+__pycache__/
+*.pyc
+storage/memory.db
+.minmin_index/
