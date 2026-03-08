@@ -4,6 +4,7 @@ import 'package:minmin/main.dart';
 void main() {
   testWidgets('MinMin app launches smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(const MinMinApp());
-    expect(find.text('MIN MIN'), findsOneWidget);
+    // Setup screen shown when no model is loaded — title appears multiple times
+    expect(find.text('MIN MIN'), findsWidgets);
   });
 }

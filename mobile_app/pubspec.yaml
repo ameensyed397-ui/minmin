@@ -1,7 +1,7 @@
 name: minmin
-description: MIN MIN - Offline-first mobile AI coding assistant powered by local models.
+description: MIN MIN - Offline AI coding assistant. Runs fully on-device using Gemma.
 publish_to: "none"
-version: 0.1.0+1
+version: 2.0.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -11,6 +11,11 @@ dependencies:
     sdk: flutter
   provider: ^6.1.2
   http: ^1.2.2
+  flutter_gemma: ^0.2.1
+  file_picker: ^8.1.2
+  shared_preferences: ^2.3.2
+  path_provider: ^2.1.4
+  url_launcher: ^6.3.0
   flutter_highlight: ^0.7.0
   highlight: ^0.7.0
 
