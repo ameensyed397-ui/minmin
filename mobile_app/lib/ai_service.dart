@@ -14,6 +14,18 @@ class AiService {
     return body as Map<String, dynamic>;
   }
 
+  Future<bool> ping(String backendUrl) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$backendUrl/health'),
+        headers: const {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 5));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> loadProject({
     required String backendUrl,
     required String projectPath,
@@ -22,7 +34,7 @@ class AiService {
       Uri.parse('$backendUrl/api/projects/load'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({'path': projectPath}),
-    );
+    ).timeout(const Duration(seconds: 120));
     return _decode(response);
   }
 
@@ -35,7 +47,7 @@ class AiService {
       Uri.parse('$backendUrl/api/chat/plan'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({'project_path': projectPath, 'prompt': prompt}),
-    );
+    ).timeout(const Duration(seconds: 180));
     return _decode(response);
   }
 
@@ -53,7 +65,7 @@ class AiService {
         'prompt': prompt,
         'approved_plan': approvedPlan,
       }),
-    );
+    ).timeout(const Duration(seconds: 300));
     return _decode(response);
   }
 
@@ -66,7 +78,7 @@ class AiService {
       Uri.parse('$backendUrl/api/terminal/run'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({'project_path': projectPath, 'command': command}),
-    );
+    ).timeout(const Duration(seconds: 120));
     return _decode(response);
   }
 
@@ -78,7 +90,7 @@ class AiService {
       Uri.parse('$backendUrl/api/files/read'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({'path': path}),
-    );
+    ).timeout(const Duration(seconds: 30));
     return _decode(response);
   }
 }

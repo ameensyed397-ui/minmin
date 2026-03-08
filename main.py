@@ -80,7 +80,14 @@ def list_files(project_path: str) -> dict[str, Any]:
 
 @app.post('/api/files/read')
 def read_file(request: FileReadRequest) -> dict[str, Any]:
+    target = Path(request.path).resolve()
+    if not target.is_absolute():
+        raise HTTPException(status_code=400, detail='Absolute path required.')
     try:
-        return {'path': request.path, 'content': Path(request.path).read_text(encoding='utf-8')}
+        return {'path': str(target), 'content': target.read_text(encoding='utf-8')}
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except (IsADirectoryError, UnicodeDecodeError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

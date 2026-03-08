@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from models.ollama_client import OllamaClient
@@ -21,10 +22,11 @@ Return a concise numbered plan with 3-7 executable steps, one per line, no markd
 """
         response = self.client.generate(self.model, planner_prompt)
         steps = [
-            line.strip(' -0123456789.')
+            re.sub(r'^[\s\-\d\.\)]+', '', line).strip()
             for line in response.splitlines()
             if line.strip()
         ]
+        steps = [s for s in steps if s]
         if steps:
             return steps[:7]
         return [

@@ -5,6 +5,7 @@ from typing import Any
 from indexer.embedding_generator import EmbeddingGenerator
 from indexer.vector_store import VectorStore
 
+_SKIP_DIRS = {'.git', '.minmin_index', '__pycache__', 'node_modules', '.dart_tool', 'build', '.gradle'}
 
 TREE_SITTER_LANGUAGE_MAP = {
     '.py': 'python',
@@ -38,7 +39,7 @@ class RepoIndexer:
         metadata: list[dict[str, Any]] = []
         files: list[str] = []
         for file in project_path.rglob('*'):
-            if not file.is_file() or '.git' in file.parts or '.minmin_index' in file.parts:
+            if not file.is_file() or _SKIP_DIRS.intersection(file.parts):
                 continue
             files.append(str(file))
             if file.suffix in TREE_SITTER_LANGUAGE_MAP:
@@ -56,7 +57,7 @@ class RepoIndexer:
             'project_path': str(project_path.resolve()),
             'files': [
                 str(p) for p in project_path.rglob('*')
-                if p.is_file() and '.git' not in p.parts and '.minmin_index' not in p.parts
+                if p.is_file() and not _SKIP_DIRS.intersection(p.parts)
             ][:200],
             'symbols': store.load_metadata(),
         }
@@ -69,8 +70,12 @@ class RepoIndexer:
 
         if self._tree_sitter_parser is not None and self._tree_sitter_languages is not None:
             try:
-                parser = self._tree_sitter_parser()
-                parser.language = self._tree_sitter_languages(TREE_SITTER_LANGUAGE_MAP[path.suffix])
+                lang = self._tree_sitter_languages(TREE_SITTER_LANGUAGE_MAP[path.suffix])
+                try:
+                    parser = self._tree_sitter_parser(lang)  # tree-sitter >= 0.22 API
+                except TypeError:
+                    parser = self._tree_sitter_parser()      # tree-sitter < 0.22 API
+                    parser.language = lang
                 tree = parser.parse(text.encode('utf-8'))
                 for node in tree.root_node.children:
                     if 'import' in node.type:
