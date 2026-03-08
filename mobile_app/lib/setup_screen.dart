@@ -34,8 +34,9 @@ class SetupScreen extends StatelessWidget {
   }
 
   Future<void> _openHuggingFace() async {
+    // Gemma .task files (MediaPipe format) are hosted on Kaggle
     final uri = Uri.parse(
-      'https://huggingface.co/google/gemma-2b-it-cpu-int4',
+      'https://www.kaggle.com/models/google/gemma/frameworks/tfLite/variations/2b-it-cpu-int4',
     );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -113,12 +114,13 @@ class SetupScreen extends StatelessWidget {
                 number: '1',
                 title: 'Get the AI model',
                 description:
-                    'Tap below to open HuggingFace. Accept the Gemma license, '
-                    'then download gemma-2b-it-cpu-int4.task to your phone.',
+                    'Tap below to open Kaggle. Sign in with a Google account, '
+                    'accept the Gemma license, then download '
+                    'gemma-2b-it-cpu-int4.task (~1.5 GB) to your phone.',
                 action: TextButton.icon(
                   onPressed: _openHuggingFace,
                   icon: const Icon(Icons.open_in_new, size: 16),
-                  label: const Text('Open HuggingFace →'),
+                  label: const Text('Open Kaggle →'),
                 ),
               ),
               const SizedBox(height: 20),
