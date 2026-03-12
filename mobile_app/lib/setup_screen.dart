@@ -1,36 +1,138 @@
+import 'dart:io';
+
+import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'ai_service.dart';
 
-class SetupScreen extends StatelessWidget {
+class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
 
-  Future<void> _pickModel(BuildContext context) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.any,
-      allowMultiple: false,
-      dialogTitle: 'Select Gemma .task model file',
-    );
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.single.path;
-    if (path == null) return;
-    if (!path.endsWith('.task') && !path.endsWith('.bin')) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please select a .task or .bin model file.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+  @override
+  State<SetupScreen> createState() => _SetupScreenState();
+}
+
+class _SetupScreenState extends State<SetupScreen> {
+  bool _isPicking = false;
+  bool _isExtracting = false;
+  String _statusText = '';
+
+  Future<void> _pickModel() async {
+    setState(() {
+      _isPicking = true;
+      _isExtracting = false;
+      _statusText = 'Opening file picker…';
+    });
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+        dialogTitle: 'Select Gemma model (.task, .bin, or .zip)',
+      );
+
+      if (!mounted) return;
+
+      if (result == null || result.files.isEmpty) {
+        setState(() {
+          _isPicking = false;
+          _statusText = '';
+        });
+        return;
       }
-      return;
+
+      final path = result.files.single.path;
+      if (path == null) {
+        _showError(
+          'Could not access the file path.\n'
+          'Try moving the file to your internal Downloads folder and selecting it again.',
+        );
+        setState(() {
+          _isPicking = false;
+          _statusText = '';
+        });
+        return;
+      }
+
+      final lower = path.toLowerCase();
+
+      if (lower.endsWith('.zip')) {
+        setState(() {
+          _isPicking = false;
+          _isExtracting = true;
+          _statusText = 'Extracting .task file from zip…\nThis may take several minutes.';
+        });
+        await _handleZip(path);
+      } else if (lower.endsWith('.task') || lower.endsWith('.bin')) {
+        setState(() {
+          _isPicking = false;
+          _statusText = 'Loading model…';
+        });
+        if (mounted) await context.read<AiService>().loadModel(path);
+      } else {
+        _showError('Please select a .task, .bin, or .zip file.');
+        setState(() {
+          _isPicking = false;
+          _statusText = '';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('File picker error: $e');
+        setState(() {
+          _isPicking = false;
+          _isExtracting = false;
+          _statusText = '';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPicking = false;
+          _isExtracting = false;
+        });
+      }
     }
-    if (context.mounted) {
-      await context.read<AiService>().loadModel(path);
+  }
+
+  Future<void> _handleZip(String zipPath) async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final outPath = await compute(
+        _extractTaskFromZip,
+        {'zipPath': zipPath, 'destDir': docsDir.path},
+      );
+
+      if (!mounted) return;
+
+      if (outPath == null) {
+        _showError('No .task or .bin file found inside the zip.');
+        return;
+      }
+
+      setState(() => _statusText = 'Loading model into AI engine…');
+      await context.read<AiService>().loadModel(outPath);
+    } catch (e) {
+      if (mounted) _showError('Extraction failed: $e');
+    } finally {
+      if (mounted) setState(() => _isExtracting = false);
     }
+  }
+
+  void _showError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.red.shade800,
+        duration: const Duration(seconds: 6),
+      ),
+    );
   }
 
   Future<void> _openKaggle() async {
@@ -45,7 +147,8 @@ class SetupScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ai = context.watch<AiService>();
-    final isLoading = ai.status == ModelStatus.loading;
+    final isModelLoading = ai.status == ModelStatus.loading;
+    final isBusy = isModelLoading || _isPicking || _isExtracting;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A15),
@@ -69,7 +172,6 @@ class SetupScreen extends StatelessWidget {
                 Center(
                   child: Column(
                     children: [
-                      // Glowing icon
                       Stack(
                         alignment: Alignment.center,
                         children: [
@@ -147,7 +249,7 @@ class SetupScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 const Text(
                   'MIN MIN runs entirely on your phone — no internet required after setup. '
-                  'You need to download the AI model file once (~1.5 GB).',
+                  'Download the AI model once (~1.5 GB), then select it below.',
                   style: TextStyle(
                       color: Color(0xFF9CA3AF), fontSize: 13.5, height: 1.55),
                 ),
@@ -157,10 +259,10 @@ class SetupScreen extends StatelessWidget {
                 // ── Steps ─────────────────────────────────────────────────
                 _StepCard(
                   number: 1,
-                  title: 'Get the AI model',
+                  title: 'Download the AI model',
                   description:
-                      'Open Kaggle, sign in with Google, accept the Gemma '
-                      'license, then download gemma-2b-it-cpu-int4.task (~1.5 GB) to your phone.',
+                      'Open Kaggle, sign in with Google, accept the Gemma license, '
+                      'then tap the download button. You will get a .zip or .task file (~1.5 GB).',
                   action: FilledButton.icon(
                     onPressed: _openKaggle,
                     style: FilledButton.styleFrom(
@@ -187,14 +289,14 @@ class SetupScreen extends StatelessWidget {
                   number: 2,
                   title: 'Select the downloaded file',
                   description:
-                      'After downloading, tap the button below and select the '
-                      '.task file from your Downloads folder.',
+                      'Tap the button below and pick the .zip or .task file from your '
+                      'Downloads folder. If you downloaded a .zip, the app will extract it automatically.',
                   action: null,
                 ),
 
                 const SizedBox(height: 32),
 
-                // ── Error ─────────────────────────────────────────────────
+                // ── Error banner ──────────────────────────────────────────
                 if (ai.status == ModelStatus.error)
                   Container(
                     padding: const EdgeInsets.all(14),
@@ -221,8 +323,8 @@ class SetupScreen extends StatelessWidget {
                     ),
                   ),
 
-                // ── Loading ───────────────────────────────────────────────
-                if (isLoading)
+                // ── Progress banner ───────────────────────────────────────
+                if (isBusy)
                   Container(
                     padding: const EdgeInsets.all(16),
                     margin: const EdgeInsets.only(bottom: 20),
@@ -232,6 +334,7 @@ class SetupScreen extends StatelessWidget {
                       border: Border.all(color: const Color(0xFF2A2A45)),
                     ),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
@@ -242,16 +345,19 @@ class SetupScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        Row(
                           children: [
-                            Icon(Icons.memory_outlined,
+                            const Icon(Icons.memory_outlined,
                                 color: Color(0xFF7C5CBF), size: 16),
-                            SizedBox(width: 8),
-                            Text(
-                              'Loading model… this takes 10–30 seconds',
-                              style: TextStyle(
-                                  color: Color(0xFF9CA3AF), fontSize: 13),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _statusText.isNotEmpty
+                                    ? _statusText
+                                    : 'Loading model… this takes 10–30 seconds',
+                                style: const TextStyle(
+                                    color: Color(0xFF9CA3AF), fontSize: 13, height: 1.5),
+                              ),
                             ),
                           ],
                         ),
@@ -264,16 +370,16 @@ class SetupScreen extends StatelessWidget {
                   width: double.infinity,
                   height: 54,
                   decoration: BoxDecoration(
-                    gradient: isLoading
+                    gradient: isBusy
                         ? null
                         : const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [Color(0xFFA07DE0), Color(0xFF5C3A9B)],
                           ),
-                    color: isLoading ? const Color(0xFF1A1A2E) : null,
+                    color: isBusy ? const Color(0xFF1A1A2E) : null,
                     borderRadius: BorderRadius.circular(14),
-                    boxShadow: isLoading
+                    boxShadow: isBusy
                         ? null
                         : [
                             BoxShadow(
@@ -287,26 +393,32 @@ class SetupScreen extends StatelessWidget {
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: isLoading ? null : () => _pickModel(context),
+                      onTap: isBusy ? null : _pickModel,
                       borderRadius: BorderRadius.circular(14),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            Icons.folder_open_outlined,
-                            color: isLoading
+                            _isExtracting
+                                ? Icons.archive_outlined
+                                : Icons.folder_open_outlined,
+                            color: isBusy
                                 ? const Color(0xFF9CA3AF)
                                 : Colors.white,
                             size: 20,
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            'Select Model File',
+                            _isExtracting
+                                ? 'Extracting…'
+                                : _isPicking
+                                    ? 'Opening picker…'
+                                    : 'Select Model File (.task or .zip)',
                             style: TextStyle(
-                              color: isLoading
+                              color: isBusy
                                   ? const Color(0xFF9CA3AF)
                                   : Colors.white,
-                              fontSize: 16,
+                              fontSize: 15,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.3,
                             ),
@@ -380,7 +492,6 @@ class _StepCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Step number badge
           Container(
             width: 30,
             height: 30,
@@ -436,4 +547,33 @@ class _StepCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Top-level function — runs in a separate isolate via compute() ────────────
+// Extracts the first .task or .bin file from a zip into destDir.
+// Returns the output file path, or null if no matching file was found.
+String? _extractTaskFromZip(Map<String, String> args) {
+  final zipPath = args['zipPath']!;
+  final destDir = args['destDir']!;
+
+  final inputStream = InputFileStream(zipPath);
+  final archive = ZipDecoder().decodeBuffer(inputStream);
+
+  for (final file in archive.files) {
+    if (!file.isFile) continue;
+    final name = file.name.split('/').last;
+    if (name.endsWith('.task') || name.endsWith('.bin')) {
+      final outPath = '$destDir/$name';
+      // Re-use if already extracted (e.g. user taps again after a crash)
+      if (!File(outPath).existsSync()) {
+        final outStream = OutputFileStream(outPath);
+        file.writeContent(outStream);
+        outStream.close();
+      }
+      inputStream.close();
+      return outPath;
+    }
+  }
+  inputStream.close();
+  return null;
 }
