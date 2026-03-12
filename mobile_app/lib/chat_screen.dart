@@ -583,7 +583,7 @@ class _ChatScreenState extends State<ChatScreen> {
               leading: const Icon(Icons.swap_horiz, color: _accent),
               title: const Text('Change model',
                   style: TextStyle(color: _textPrimary)),
-              subtitle: const Text('Select a different .task file',
+              subtitle: const Text('Select a different .task / .zip file',
                   style: TextStyle(color: _textSecondary, fontSize: 12)),
               onTap: () async {
                 Navigator.pop(context);
