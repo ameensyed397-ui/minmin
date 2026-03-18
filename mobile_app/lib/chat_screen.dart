@@ -93,6 +93,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final stream = ai.chat(history, userMessage);
       final sb = StringBuffer();
       await for (final token in stream) {
+        if (!mounted) return;
         sb.write(token);
         setState(() {
           _messages[_messages.length - 1] =
@@ -100,11 +101,13 @@ class _ChatScreenState extends State<ChatScreen> {
         });
         _scrollToBottom();
       }
+      if (!mounted) return;
       setState(() {
         _messages[_messages.length - 1] =
             _messages.last.copyWith(isStreaming: false);
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _messages[_messages.length - 1] = ChatMessage(
           content: 'Error: $e',
@@ -112,8 +115,10 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       });
     } finally {
-      setState(() => _generating = false);
-      _scrollToBottom();
+      if (mounted) {
+        setState(() => _generating = false);
+        _scrollToBottom();
+      }
     }
   }
 
