@@ -21,6 +21,7 @@ class _SetupScreenState extends State<SetupScreen> {
   bool _isPicking = false;
   bool _isExtracting = false;
   bool _isCopying = false;
+  double _copyProgress = 0.0; // 0.0 – 1.0
   String _statusText = '';
 
   Future<void> _pickModel() async {
@@ -134,13 +135,37 @@ class _SetupScreenState extends State<SetupScreen> {
       final name = srcPath.split(RegExp(r'[\\/]')).last;
       final destPath = '${docsDir.path}/$name';
 
-      // Skip copy if already in internal storage
       if (!File(destPath).existsSync()) {
-        await compute(_copyFile, {'src': srcPath, 'dest': destPath});
+        final src = File(srcPath);
+        final total = await src.length();
+        final out = File(destPath).openWrite();
+        int copied = 0;
+        int lastPercent = -1;
+
+        await for (final chunk in src.openRead()) {
+          if (!mounted) {
+            await out.close();
+            return;
+          }
+          out.add(chunk);
+          copied += chunk.length;
+          final percent = total > 0 ? (copied * 100 ~/ total) : 0;
+          if (percent != lastPercent) {
+            lastPercent = percent;
+            setState(() {
+              _copyProgress = copied / total;
+              _statusText = 'Copying to internal storage… $percent%';
+            });
+          }
+        }
+        await out.close();
       }
 
       if (!mounted) return;
-      setState(() => _statusText = 'Loading model into AI engine…');
+      setState(() {
+        _copyProgress = 1.0;
+        _statusText = 'Loading model into AI engine…';
+      });
       await context.read<AiService>().loadModel(destPath);
     } catch (e) {
       if (mounted) _showError('Could not load model: $e');
@@ -363,9 +388,10 @@ class _SetupScreenState extends State<SetupScreen> {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
-                          child: const LinearProgressIndicator(
-                            backgroundColor: Color(0xFF1E1E3F),
-                            color: Color(0xFF7C5CBF),
+                          child: LinearProgressIndicator(
+                            value: _isCopying ? _copyProgress : null,
+                            backgroundColor: const Color(0xFF1E1E3F),
+                            color: const Color(0xFF7C5CBF),
                             minHeight: 5,
                           ),
                         ),
@@ -579,16 +605,6 @@ class _StepCard extends StatelessWidget {
 }
 
 // ── Top-level function — runs in a separate isolate via compute() ────────────
-// Copies src to dest (skips if dest already exists). Returns dest path.
-String _copyFile(Map<String, String> args) {
-  final src = args['src']!;
-  final dest = args['dest']!;
-  if (!File(dest).existsSync()) {
-    File(src).copySync(dest);
-  }
-  return dest;
-}
-
 // Extracts the first .task or .bin file from a zip into destDir.
 // Returns the output file path, or null if no matching file was found.
 String? _extractTaskFromZip(Map<String, String> args) {
