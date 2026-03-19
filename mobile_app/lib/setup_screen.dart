@@ -20,6 +20,7 @@ class SetupScreen extends StatefulWidget {
 class _SetupScreenState extends State<SetupScreen> {
   bool _isPicking = false;
   bool _isExtracting = false;
+  bool _isCopying = false;
   String _statusText = '';
 
   Future<void> _pickModel() async {
@@ -71,9 +72,11 @@ class _SetupScreenState extends State<SetupScreen> {
       } else if (lower.endsWith('.task') || lower.endsWith('.bin')) {
         setState(() {
           _isPicking = false;
-          _statusText = 'Loading model…';
+          _isCopying = true;
+          _statusText =
+              'Copying model to app storage…\nThis may take a few minutes for a 1.5 GB file.';
         });
-        if (mounted) await context.read<AiService>().loadModel(path);
+        await _copyAndLoad(path);
       } else {
         _showError('Please select a .task, .bin, or .zip file.');
         setState(() {
@@ -95,6 +98,7 @@ class _SetupScreenState extends State<SetupScreen> {
         setState(() {
           _isPicking = false;
           _isExtracting = false;
+          _isCopying = false;
         });
       }
     }
@@ -124,6 +128,27 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
+  Future<void> _copyAndLoad(String srcPath) async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final name = srcPath.split(RegExp(r'[\\/]')).last;
+      final destPath = '${docsDir.path}/$name';
+
+      // Skip copy if already in internal storage
+      if (!File(destPath).existsSync()) {
+        await compute(_copyFile, {'src': srcPath, 'dest': destPath});
+      }
+
+      if (!mounted) return;
+      setState(() => _statusText = 'Loading model into AI engine…');
+      await context.read<AiService>().loadModel(destPath);
+    } catch (e) {
+      if (mounted) _showError('Could not load model: $e');
+    } finally {
+      if (mounted) setState(() => _isCopying = false);
+    }
+  }
+
   void _showError(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -148,7 +173,7 @@ class _SetupScreenState extends State<SetupScreen> {
   Widget build(BuildContext context) {
     final ai = context.watch<AiService>();
     final isModelLoading = ai.status == ModelStatus.loading;
-    final isBusy = isModelLoading || _isPicking || _isExtracting;
+    final isBusy = isModelLoading || _isPicking || _isExtracting || _isCopying;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A15),
@@ -401,7 +426,9 @@ class _SetupScreenState extends State<SetupScreen> {
                           Icon(
                             _isExtracting
                                 ? Icons.archive_outlined
-                                : Icons.folder_open_outlined,
+                                : _isCopying
+                                    ? Icons.copy_outlined
+                                    : Icons.folder_open_outlined,
                             color: isBusy
                                 ? const Color(0xFF9CA3AF)
                                 : Colors.white,
@@ -411,9 +438,11 @@ class _SetupScreenState extends State<SetupScreen> {
                           Text(
                             _isExtracting
                                 ? 'Extracting…'
-                                : _isPicking
-                                    ? 'Opening picker…'
-                                    : 'Select Model File (.task or .zip)',
+                                : _isCopying
+                                    ? 'Copying to internal storage…'
+                                    : _isPicking
+                                        ? 'Opening picker…'
+                                        : 'Select Model File (.task or .zip)',
                             style: TextStyle(
                               color: isBusy
                                   ? const Color(0xFF9CA3AF)
@@ -550,6 +579,16 @@ class _StepCard extends StatelessWidget {
 }
 
 // ── Top-level function — runs in a separate isolate via compute() ────────────
+// Copies src to dest (skips if dest already exists). Returns dest path.
+String _copyFile(Map<String, String> args) {
+  final src = args['src']!;
+  final dest = args['dest']!;
+  if (!File(dest).existsSync()) {
+    File(src).copySync(dest);
+  }
+  return dest;
+}
+
 // Extracts the first .task or .bin file from a zip into destDir.
 // Returns the output file path, or null if no matching file was found.
 String? _extractTaskFromZip(Map<String, String> args) {
