@@ -141,24 +141,36 @@ class _SetupScreenState extends State<SetupScreen> {
         final out = File(destPath).openWrite();
         int copied = 0;
         int lastPercent = -1;
+        bool copyComplete = false;
 
-        await for (final chunk in src.openRead()) {
-          if (!mounted) {
-            await out.close();
-            return;
+        try {
+          await for (final chunk in src.openRead()) {
+            if (!mounted) return; // finally closes + deletes partial file
+            out.add(chunk);
+            copied += chunk.length;
+            final percent = total > 0 ? (copied * 100 ~/ total) : 0;
+            if (percent != lastPercent) {
+              lastPercent = percent;
+              // flush() drains the IOSink buffer to disk before reading more —
+              // prevents multi-GB memory buildup on large files.
+              await out.flush();
+              if (!mounted) return;
+              setState(() {
+                _copyProgress = copied / total;
+                _statusText = 'Copying to internal storage… $percent%   '
+                    '(${(copied / 1e9).toStringAsFixed(2)} / '
+                    '${(total / 1e9).toStringAsFixed(2)} GB)';
+              });
+            }
           }
-          out.add(chunk);
-          copied += chunk.length;
-          final percent = total > 0 ? (copied * 100 ~/ total) : 0;
-          if (percent != lastPercent) {
-            lastPercent = percent;
-            setState(() {
-              _copyProgress = copied / total;
-              _statusText = 'Copying to internal storage… $percent%';
-            });
+          copyComplete = true;
+        } finally {
+          await out.close();
+          // Delete partial file so next launch retries the copy cleanly.
+          if (!copyComplete && File(destPath).existsSync()) {
+            await File(destPath).delete();
           }
         }
-        await out.close();
       }
 
       if (!mounted) return;
